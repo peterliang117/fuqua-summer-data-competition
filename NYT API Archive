@@ -1,0 +1,83 @@
+import os
+import json
+import time
+import requests
+import datetime 
+import dateutil
+import pandas as pd
+from dateutil.relativedelta import relativedelta
+
+months_in_range = [['2019','12'],
+                   ['2020','1'],
+                   ['2020','2'],
+                   ['2020','3'],
+                   ['2020','4']]
+                   
+start = datetime.date(2019,12,30)
+end = datetime.date(2020,4,7)
+
+def send_request(date):
+    '''Sends a request to the NYT Archive API for given date.'''
+    base_url = 'https://api.nytimes.com/svc/archive/v1/'
+    url = base_url + '/' + date[0] + '/' + date[1] + '.json?api-key=' + 'XG4Ak69MRns8NHBWB4A0mAAV07YyJrI4'
+    response = requests.get(url).json()
+    time.sleep(6)
+    return response
+
+
+def is_valid(article, date):
+    '''An article is only worth checking if it is in range, and has a headline.'''
+    is_in_range = date > start and date < end
+    has_headline = type(article['headline']) == dict and 'main' in article['headline'].keys()
+    return is_in_range and has_headline
+
+
+def parse_response(response):
+    '''Parses and returns response as pandas data frame.'''
+    data = {'headline': [],  
+        'date': [], 
+        'doc_type': [],
+        'material_type': [],
+        'section': [],
+        'keywords': [],
+        'web_url':[]}
+    
+    articles = response['response']['docs'] 
+    for article in articles: # For each article, make sure it falls within our date range
+        date = dateutil.parser.parse(article['pub_date']).date()
+        if is_valid(article, date):
+            data['date'].append(date)
+            data['headline'].append(article['headline']['main']) 
+            if 'section' in article:
+                data['section'].append(article['section_name'])
+            else:
+                data['section'].append(None)
+            data['doc_type'].append(article['document_type'])
+            if 'type_of_material' in article: 
+                data['material_type'].append(article['type_of_material'])
+            else:
+                data['material_type'].append(None)
+            keywords = [keyword['value'] for keyword in article['keywords'] if keyword['name'] == 'subject']
+            data['keywords'].append(keywords)
+            if 'web_url' in article: 
+                data['web_url'].append(article['web_url'])
+            else:
+                data['web_url'].append(None)
+    return pd.DataFrame(data) 
+
+
+def get_data(dates):
+    '''Sends and parses request/response to/from NYT Archive API for given dates.'''
+    total = 0
+    print('Date range: ' + str(dates[0]) + ' to ' + str(dates[-1]))
+    if not os.path.exists('headlines'):
+        os.mkdir('headlines')
+    for date in dates:
+        response = send_request(date)
+        df = parse_response(response)
+        total += len(df)
+        df.to_csv('headlines/' + date[0] + '-' + date[1] + '.csv', index=False)
+        print('Saving headlines/' + date[0] + '-' + date[1] + '.csv...')
+    print('Number of articles collected: ' + str(total))
+    
+get_data(months_in_range) # this line to retrieve data we want with epecify date range
